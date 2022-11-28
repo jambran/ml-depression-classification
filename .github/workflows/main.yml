@@ -15,6 +15,10 @@ jobs:
           python-version: 3.9
           architecture: x64
 
+      - name: Where-am-i
+        run: |
+          ls 
+
       - name: Python Linter
         uses: sunnysid3up/python-linter@master
         with:
