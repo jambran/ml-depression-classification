@@ -3,29 +3,31 @@ from torch import nn
 from transformers import (
     AutoModel,
     AutoConfig,
+    PreTrainedModel,
 )
 
+from .depression_detection_config import DepressionDetectionConfig
 
-class DepressionDetectionModel(nn.Module):
+
+class DepressionDetectionModel(PreTrainedModel):
+    config_class = DepressionDetectionConfig
 
     def __init__(self,
-                 encoder: AutoModel,
-                 config: AutoConfig,
-                 num_layers: int,
-                 num_classes: int,
+                 config: DepressionDetectionConfig,
                  ):
-        super().__init__()
-        self.encoder = encoder
+        super().__init__(config)
+
+        self.encoder = Encoder(config.model_name_or_path)
         self.config = config
         layers = [
             nn.Linear(self.config.hidden_size,
                       self.config.hidden_size)
-            for _ in range(num_layers)
+            for _ in range(self.config.num_layers)
         ]
 
         self.hidden_layers = nn.Sequential(*layers)
         self.classification_layer = nn.Linear(self.config.hidden_size,
-                                              num_classes)
+                                              self.config.num_classes)
 
     def forward(self,
                 input_ids: torch.LongTensor,
@@ -64,3 +66,16 @@ class DepressionDetectionModel(nn.Module):
                                     (sample_input['input_ids'],
                                      sample_input['attention_mask']),
                                     )
+
+
+class Encoder(nn.Module):
+
+    def __init__(self, model_name_or_path: str = "distilbert-base-cased"):
+        super().__init__()
+        self.config = AutoConfig.from_pretrained(
+            model_name_or_path,
+        )
+        self.model = AutoModel.from_config(self.config)
+
+    def forward(self, input_ids, attention_mask):
+        return self.model(input_ids, attention_mask)

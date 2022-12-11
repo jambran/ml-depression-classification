@@ -33,7 +33,7 @@ parser.add_argument("--data_dir", type=str, default="../data",
                          "test.csv")
 parser.add_argument("--cache_dir", type=str, default="../data/cache",
                     help="path to cached train, val, and test TensorDatasets")
-parser.add_argument("--output_dir", type=str, default="./experiments/5-epochs")
+parser.add_argument("--output_dir", type=str, default="./experiments/5-epochs-refactored")
 parser.add_argument("--checkpoint_dir", type=str, default="checkpoints")
 parser.add_argument("--model_dir", type=str, default=None,
                     help="Defaults to trainer's root dir")
@@ -66,7 +66,6 @@ if __name__ == "__main__":
         attention_dropout=args.attention_dropout,
         num_layers=args.num_layers,
         hidden_size=128,
-        num_classes=len(DepressionLabel),
     )
     if args.load_from_checkpoint:
         model = LitDepressionDetectionModel.load_from_checkpoint(
@@ -101,5 +100,10 @@ if __name__ == "__main__":
         callbacks=[checkpoint_callback],
     )
     trainer.fit(model, datamodule=data_module)
-    save_model(trainer, model,
-               model_dir=args.model_dir if args.model_dir else trainer.log_dir)
+    if args.exp_name != "debug":
+        model.model.save_pretrained("../depression-classification")
+        save_model(
+            trainer,
+            model,
+            model_dir=args.model_dir if args.model_dir else trainer.log_dir,
+        )

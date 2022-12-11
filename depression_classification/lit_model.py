@@ -1,43 +1,18 @@
-from dataclasses import dataclass
-from operator import itemgetter
-from typing import Iterable, Dict, List
-
 import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
 import torchmetrics
-from transformers import (
-    AutoModel,
-    AutoConfig,
-)
-from transformers import (
-    AutoTokenizer,
-)
-from pydantic import BaseModel
 
 from .data_loader import DepressionLabel
+from .data_models import (
+    DetectionOutput,
+)
+from .depression_detection_config import DepressionDetectionConfig
 from .model import DepressionDetectionModel
 from .plotting_metrics import (
     plot_prf1_per_class,
     plot_confusion_matrix,
 )
-
-
-@dataclass
-class DetectionOutput:
-    logits: torch.Tensor  # (bs, num_labels)
-    probabilities: torch.Tensor  # (bs, num_labels)
-
-
-class DepressionPrediction(BaseModel):
-    """
-    slightly more user focused object. At inference time, the information
-    we'll return
-    """
-    sentence: str
-    predicted_label: str
-    probability: float
-    label_to_probability: Dict[str, float]
 
 
 class LitDepressionDetectionModel(pl.LightningModule):
@@ -50,79 +25,21 @@ class LitDepressionDetectionModel(pl.LightningModule):
                  attention_dropout,
                  num_layers,
                  hidden_size,
-                 num_classes,
                  ):
         super().__init__()
 
         self.save_hyperparameters()
-        self.config = AutoConfig.from_pretrained(
-            model_name_or_path,
-            dropout=self.hparams.dropout,
-            attention_dropout=self.hparams.attention_dropout
-        )
-
-        # Compatibility with models that name dropout differently
-        self.config.dropout = self.hparams.dropout
-
-        encoder = AutoModel.from_pretrained(
-            model_name_or_path,
-            config=self.config,
-        )
-
-        self.model = DepressionDetectionModel(
-            encoder=encoder,
-            config=self.config,
-            num_layers=num_layers,
-            num_classes=num_classes,
-        )
-
         self.class_names = [l.name for l in DepressionLabel]
 
-        # if needed, we'll cache the tokenizer
-        self.tokenizer = None
-
-    def tokenize_and_predict(self, sentences: Iterable[str],
-                             ) -> List[DepressionPrediction]:
-        """
-        for inference, it's convenient to have the model be able
-        to take in sentences as input and handle tokenization
-        :param sentences: iterable of sentence strings to predict on
-        """
-        if self.tokenizer is None:
-            self.tokenizer = AutoTokenizer.from_pretrained(
-                self.model_name_or_path,
-                use_fast=True,
-            )
-        tokenized = self.tokenizer(
-            sentences,
-            max_length=512,
-            padding="longest",  # pad to the longest sequence in the batch
-            truncation=True,
-            return_tensors="pt",
+        self.config = DepressionDetectionConfig(
+            model_name_or_path,
+            num_layers=self.hparams.num_layers,
+            num_classes=len(self.class_names),
+            dropout=self.hparams.dropout,
+            attention_dropout=self.hparams.attention_dropout,
         )
-        input_ids = tokenized["input_ids"]
-        attention_mask = tokenized["attention_mask"]
-        with torch.no_grad():
-            output = self.forward((input_ids, attention_mask))
 
-        predictions = []
-        for sentence, logits, probs in zip(sentences,
-                                           output.logits.tolist(),
-                                           output.probabilities.tolist(),
-                                           ):
-
-            tups = list(zip(DepressionLabel, probs))
-            best_label, best_prob = max(tups, key=itemgetter(1))
-
-            prediction = DepressionPrediction(
-                sentence=sentence,
-                predicted_label=best_label.name,
-                probability=best_prob,
-                label_to_probability={label.name: prob for label, prob in tups}
-            )
-            predictions.append(prediction)
-
-        return predictions
+        self.model = DepressionDetectionModel(self.config)
 
     def forward(self, batch) -> DetectionOutput:
         # if label in batch, grab it. Otherwise, label is empty list
