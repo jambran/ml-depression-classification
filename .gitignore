@@ -1,5 +1,7 @@
 # project custom
 data
+model_building/experiments
+model_building/debug
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
